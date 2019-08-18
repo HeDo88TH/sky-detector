@@ -73,12 +73,26 @@ bool SkyAreaDetector::extract_sky(const cv::Mat &src_image, cv::Mat &sky_mask) {
     int image_height = src_image.size[0];
     int image_width = src_image.size[1];
 
+    auto start_t = std::chrono::high_resolution_clock::now();
     std::vector<int> sky_border_optimal = extract_border_optimal(src_image);
+    auto end_t = std::chrono::high_resolution_clock::now();
 
+    std::chrono::duration<double> cost_time = end_t - start_t;
+
+    LOG(INFO) << "---- " << "extract_border_optimal" << " ---- "
+              << cost_time.count() << "s" << std::endl;
+
+    start_t = std::chrono::high_resolution_clock::now();
     if (!has_sky_region(sky_border_optimal, image_height / 30, image_height / 4, 2)) {
 #ifdef DEBUG
         LOG(INFO) << "没有提取到天空区域" << std::endl;
 #endif
+        end_t = std::chrono::high_resolution_clock::now();
+
+        std::chrono::duration<double> cost_time = end_t - start_t;
+
+        LOG(INFO) << "---- " << "has_sky_region" << " ---- "
+                  << cost_time.count() << "s" << std::endl;
         return false;
     }
 
@@ -90,6 +104,7 @@ bool SkyAreaDetector::extract_sky(const cv::Mat &src_image, cv::Mat &sky_mask) {
     cv::waitKey();
 #endif
 
+    start_t = std::chrono::high_resolution_clock::now();
     if (has_partial_sky_region(sky_border_optimal, image_width / 3)) {
         std::vector<int> border_new = refine_border(sky_border_optimal, src_image);
         sky_mask = make_sky_mask(src_image, border_new);
@@ -98,10 +113,23 @@ bool SkyAreaDetector::extract_sky(const cv::Mat &src_image, cv::Mat &sky_mask) {
         cv::imshow("sky image with refine", sky_image);
         cv::waitKey();
 #endif
+        end_t = std::chrono::high_resolution_clock::now();
+
+        std::chrono::duration<double> cost_time = end_t - start_t;
+
+        LOG(INFO) << "---- " << "has_partial_sky_region" << " ---- "
+                  << cost_time.count() << "s" << std::endl;
         return true;
     }
 
+    start_t = std::chrono::high_resolution_clock::now();
     sky_mask = make_sky_mask(src_image, sky_border_optimal);
+    end_t = std::chrono::high_resolution_clock::now();
+
+    cost_time = end_t - start_t;
+
+    LOG(INFO) << "---- " << "make_sky_mask" << " ---- "
+              << cost_time.count() << "s" << std::endl;
 
     return true;
 }
@@ -225,12 +253,23 @@ void SkyAreaDetector::extract_image_gradient(const cv::Mat &src_image, cv::Mat &
  * @return
  */
 std::vector<int> SkyAreaDetector::extract_border_optimal(const cv::Mat &src_image) {
+
+    auto start_t = std::chrono::high_resolution_clock::now();
     // 提取梯度信息图
     cv::Mat gradient_info_map;
     extract_image_gradient(src_image, gradient_info_map);
 
     int n = static_cast<int>(std::floor((f_thres_sky_max - f_thres_sky_min)
                                         / f_thres_sky_search_step)) + 1;
+
+    auto end_t = std::chrono::high_resolution_clock::now();
+
+    std::chrono::duration<double> cost_time = end_t - start_t;
+
+    LOG(INFO) << "---- " << "extract_image_gradient" << " ---- "
+              << cost_time.count() << "s" << std::endl;
+
+    start_t = std::chrono::high_resolution_clock::now();
 
     std::vector<int> border_opt;
     double jn_max = 0.0;
@@ -249,6 +288,13 @@ std::vector<int> SkyAreaDetector::extract_border_optimal(const cv::Mat &src_imag
             border_opt = b_tmp;
         }
     }
+
+    end_t = std::chrono::high_resolution_clock::now();
+
+    cost_time = end_t - start_t;
+
+    LOG(INFO) << "---- " << "extract_border+energy" << " ---- "
+              << cost_time.count() << "s" << std::endl;
 
     return border_opt;
 }
