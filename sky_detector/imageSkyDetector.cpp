@@ -73,26 +73,14 @@ bool SkyAreaDetector::extract_sky(const cv::Mat &src_image, cv::Mat &sky_mask) {
     int image_height = src_image.size[0];
     int image_width = src_image.size[1];
 
-    auto start_t = std::chrono::high_resolution_clock::now();
     std::vector<int> sky_border_optimal = extract_border_optimal(src_image);
-    auto end_t = std::chrono::high_resolution_clock::now();
 
-    std::chrono::duration<double> cost_time = end_t - start_t;
+    std::vector<int> border_diff(static_cast<int>(sky_border_optimal.size() - 1), 0);
 
-    LOG(INFO) << "---- " << "extract_border_optimal" << " ---- "
-              << cost_time.count() << "s" << std::endl;
-
-    start_t = std::chrono::high_resolution_clock::now();
-    if (!has_sky_region(sky_border_optimal, image_height / 30, image_height / 4, 2)) {
+    if (!has_sky_region(sky_border_optimal, border_diff, image_height / 30, image_height / 4, 2)) {
 #ifdef DEBUG
         LOG(INFO) << "没有提取到天空区域" << std::endl;
 #endif
-        end_t = std::chrono::high_resolution_clock::now();
-
-        std::chrono::duration<double> cost_time = end_t - start_t;
-
-        LOG(INFO) << "---- " << "has_sky_region" << " ---- "
-                  << cost_time.count() << "s" << std::endl;
         return false;
     }
 
@@ -104,8 +92,7 @@ bool SkyAreaDetector::extract_sky(const cv::Mat &src_image, cv::Mat &sky_mask) {
     cv::waitKey();
 #endif
 
-    start_t = std::chrono::high_resolution_clock::now();
-    if (has_partial_sky_region(sky_border_optimal, image_width / 3)) {
+    if (has_partial_sky_region(sky_border_optimal, border_diff, image_width / 3)) {
         std::vector<int> border_new = refine_border(sky_border_optimal, src_image);
         sky_mask = make_sky_mask(src_image, border_new);
 #ifdef DEBUG
@@ -113,23 +100,10 @@ bool SkyAreaDetector::extract_sky(const cv::Mat &src_image, cv::Mat &sky_mask) {
         cv::imshow("sky image with refine", sky_image);
         cv::waitKey();
 #endif
-        end_t = std::chrono::high_resolution_clock::now();
-
-        std::chrono::duration<double> cost_time = end_t - start_t;
-
-        LOG(INFO) << "---- " << "has_partial_sky_region" << " ---- "
-                  << cost_time.count() << "s" << std::endl;
         return true;
     }
 
-    start_t = std::chrono::high_resolution_clock::now();
     sky_mask = make_sky_mask(src_image, sky_border_optimal);
-    end_t = std::chrono::high_resolution_clock::now();
-
-    cost_time = end_t - start_t;
-
-    LOG(INFO) << "---- " << "make_sky_mask" << " ---- "
-              << cost_time.count() << "s" << std::endl;
 
     return true;
 }
@@ -254,7 +228,6 @@ void SkyAreaDetector::extract_image_gradient(const cv::Mat &src_image, cv::Mat &
  */
 std::vector<int> SkyAreaDetector::extract_border_optimal(const cv::Mat &src_image) {
 
-    auto start_t = std::chrono::high_resolution_clock::now();
     // 提取梯度信息图
     cv::Mat gradient_info_map;
     extract_image_gradient(src_image, gradient_info_map);
@@ -262,22 +235,20 @@ std::vector<int> SkyAreaDetector::extract_border_optimal(const cv::Mat &src_imag
     int n = static_cast<int>(std::floor((f_thres_sky_max - f_thres_sky_min)
                                         / f_thres_sky_search_step)) + 1;
 
-    auto end_t = std::chrono::high_resolution_clock::now();
+    int image_height = gradient_info_map.size[0];
+    int image_width = gradient_info_map.size[1];
 
-    std::chrono::duration<double> cost_time = end_t - start_t;
+    std::vector<int> border_opt(image_width, image_height - 1);
+    std::vector<int> b_tmp(image_width, image_height - 1);
 
-    LOG(INFO) << "---- " << "extract_image_gradient" << " ---- "
-              << cost_time.count() << "s" << std::endl;
-
-    start_t = std::chrono::high_resolution_clock::now();
-
-    std::vector<int> border_opt;
     double jn_max = 0.0;
 
-    for (int k = 1; k < n + 1; k++) {
-        double t = f_thres_sky_min + (std::floor((f_thres_sky_max - f_thres_sky_min) / n) - 1) * (k - 1);
+    double step = (std::floor((f_thres_sky_max - f_thres_sky_min) / n) - 1);
 
-        std::vector<int> b_tmp = extract_border(gradient_info_map, t);
+    for (int k = 1; k < n + 1; ++k) {
+        double t = f_thres_sky_min + step * (k - 1);
+
+        extract_border(b_tmp, gradient_info_map, t);
         double jn = calculate_sky_energy(b_tmp, src_image);
         if (std::isinf(jn)) {
             LOG(INFO) << "Jn is -inf" << std::endl;
@@ -289,13 +260,6 @@ std::vector<int> SkyAreaDetector::extract_border_optimal(const cv::Mat &src_imag
         }
     }
 
-    end_t = std::chrono::high_resolution_clock::now();
-
-    cost_time = end_t - start_t;
-
-    LOG(INFO) << "---- " << "extract_border+energy" << " ---- "
-              << cost_time.count() << "s" << std::endl;
-
     return border_opt;
 }
 
@@ -305,12 +269,15 @@ std::vector<int> SkyAreaDetector::extract_border_optimal(const cv::Mat &src_imag
  * @param thresh
  * @return
  */
-std::vector<int> SkyAreaDetector::extract_border(const cv::Mat &gradient_info_map,
+void SkyAreaDetector::extract_border(std::vector<int> &border,
+        const cv::Mat &gradient_info_map,
         double thresh) {
     int image_height = gradient_info_map.size[0];
     int image_width = gradient_info_map.size[1];
-    std::vector<int> border(image_width, image_height - 1);
 
+    assert (image_width == border.size());
+
+#pragma omp parallel for
     for (int col = 0; col < image_width; ++col) {
         int row_index = 0;
         for (int row = 0; row < image_height; ++row) {
@@ -324,8 +291,6 @@ std::vector<int> SkyAreaDetector::extract_border(const cv::Mat &gradient_info_ma
             border[col] = image_height - 1;
         }
     }
-
-    return border;
 }
 
 /***
@@ -340,6 +305,7 @@ std::vector<int> SkyAreaDetector::refine_border(const std::vector<int> &border,
     int image_height = src_image.size[0];
     int image_width = src_image.size[1];
 
+    /*
     // 制作天空图像掩码和地面图像掩码
     cv::Mat sky_mask = make_sky_mask(src_image, border, 1);
     cv::Mat ground_mask = make_sky_mask(src_image, border, 0);
@@ -390,6 +356,57 @@ std::vector<int> SkyAreaDetector::refine_border(const std::vector<int> &border,
             }
         }
     }
+    */
+
+    static std::vector<cv::Vec3b> sky_pixels(image_width*image_height);
+    static std::vector<cv::Vec3b> ground_pixels(image_width*image_height);
+
+    int sky_non_zeros_nums = 0;
+    int ground_non_zeros_nums = 0;
+
+    for (int row = 0; row < image_height; ++row) {
+        const cv::Vec3b *ptr_src = src_image.ptr<cv::Vec3b>(row);
+
+        for (int col = 0; col < image_width; ++col) {
+
+            const cv::Vec3b &p = ptr_src[col];
+            if (p[0] == 0 && p[1] == 0 && p[2] == 0)
+                continue;
+
+            if (row <= border[col]) {
+                sky_pixels[sky_non_zeros_nums] = p;
+                ++sky_non_zeros_nums;
+            }
+            else {
+                ground_pixels[ground_non_zeros_nums] = p;
+                ++ground_non_zeros_nums;
+            }
+        }
+    }
+
+    static cv::Mat sky_image_non_zero, ground_image_non_zero;
+    sky_image_non_zero.create(sky_non_zeros_nums, 3, CV_8UC1);
+    ground_image_non_zero.create(ground_non_zeros_nums, 3, CV_8UC1);
+
+    #pragma omp parallel for
+    for (int i=0; i<sky_non_zeros_nums; ++i)
+    {
+        const cv::Vec3b &p = sky_pixels[i];
+        uchar *ptr_src = sky_image_non_zero.ptr<uchar>(i);
+        ptr_src[0] = p[0];
+        ptr_src[1] = p[1];
+        ptr_src[2] = p[2];
+    }
+
+    #pragma omp parallel for
+    for (int i=0; i<ground_non_zeros_nums; ++i)
+    {
+        const cv::Vec3b &p = ground_pixels[i];
+        uchar *ptr_src = ground_image_non_zero.ptr<uchar>(i);
+        ptr_src[0] = p[0];
+        ptr_src[1] = p[1];
+        ptr_src[2] = p[2];
+    }
 
     // k均值聚类调整天空区域边界
     cv::Mat sky_image_float;
@@ -404,7 +421,7 @@ std::vector<int> SkyAreaDetector::refine_border(const std::vector<int> &border,
     cv::Mat sky_label_1_image = cv::Mat::zeros(label_1_nums, 3, CV_8UC1);
     cv::Mat sky_label_0_image = cv::Mat::zeros(label_0_nums, 3, CV_8UC1);
 
-    row_index = 0;
+    int row_index = 0;
     for (int row = 0; row < labels.rows; ++row) {
         if (labels.at<float>(row, 0) == 0.0) {
             sky_label_0_image.at<uchar>(row_index, 0) = sky_image_non_zero.at<uchar>(row, 0);
@@ -496,6 +513,7 @@ double SkyAreaDetector::calculate_sky_energy(const std::vector<int> &border,
     int image_height = src_image.size[0];
     int image_width = src_image.size[1];
 
+    /*
     // 制作天空图像掩码和地面图像掩码
     cv::Mat sky_mask = make_sky_mask(src_image, border, 1);
     cv::Mat ground_mask = make_sky_mask(src_image, border, 0);
@@ -517,52 +535,106 @@ double SkyAreaDetector::calculate_sky_energy(const std::vector<int> &border,
     cv::Mat ground_image_non_zero = cv::Mat::zeros(ground_non_zeros_nums, 3, CV_8UC1);
     cv::Mat sky_image_non_zero = cv::Mat::zeros(sky_non_zeros_nums, 3, CV_8UC1);
 
+    assert (ground_image.cols == image_width && ground_image.rows == image_height);
+    assert (ground_image.cols == sky_image.cols && ground_image.rows == sky_image.rows);
+
     int row_index = 0;
-    for (int col = 0; col < ground_image.cols; ++col) {
-        for (int row = 0; row < ground_image.rows; ++row) {
-            if (ground_image.at<cv::Vec3b>(row, col)[0] == 0 &&
-                    ground_image.at<cv::Vec3b>(row, col)[1] == 0 &&
-                    ground_image.at<cv::Vec3b>(row, col)[2] == 0) {
-                continue;
-            } else {
+    int row_index_beta = 0;
+    for (int col = 0; col < image_width; ++col) {
+        for (int row = 0; row < image_height; ++row) {
+            if (ground_image.at<cv::Vec3b>(row, col)[0] != 0 ||
+                    ground_image.at<cv::Vec3b>(row, col)[1] != 0 ||
+                    ground_image.at<cv::Vec3b>(row, col)[2] != 0) {
+
                 cv::Vec3b intensity = ground_image.at<cv::Vec3b>(row, col);
                 ground_image_non_zero.at<uchar>(row_index, 0) = intensity[0];
                 ground_image_non_zero.at<uchar>(row_index, 1) = intensity[1];
                 ground_image_non_zero.at<uchar>(row_index, 2) = intensity[2];
                 row_index++;
             }
+
+            if (sky_image.at<cv::Vec3b>(row, col)[0] != 0 ||
+                    sky_image.at<cv::Vec3b>(row, col)[1] != 0 ||
+                    sky_image.at<cv::Vec3b>(row, col)[2] != 0) {
+
+                cv::Vec3b intensity = sky_image.at<cv::Vec3b>(row, col);
+                sky_image_non_zero.at<uchar>(row_index_beta, 0) = intensity[0];
+                sky_image_non_zero.at<uchar>(row_index_beta, 1) = intensity[1];
+                sky_image_non_zero.at<uchar>(row_index_beta, 2) = intensity[2];
+                row_index_beta++;
+            }
         }
     }
+    */
 
-    row_index = 0;
-    for (int col = 0; col < sky_image.cols; ++col) {
-        for (int row = 0; row < sky_image.rows; ++row) {
-            if (sky_image.at<cv::Vec3b>(row, col)[0] == 0 &&
-                    sky_image.at<cv::Vec3b>(row, col)[1] == 0 &&
-                    sky_image.at<cv::Vec3b>(row, col)[2] == 0) {
+    static std::vector<cv::Vec3b> sky_pixels(image_width*image_height);
+    static std::vector<cv::Vec3b> ground_pixels(image_width*image_height);
+
+    int sky_non_zeros_nums = 0;
+    int ground_non_zeros_nums = 0;
+
+    for (int row = 0; row < image_height; ++row) {
+        const cv::Vec3b *ptr_src = src_image.ptr<cv::Vec3b>(row);
+
+        for (int col = 0; col < image_width; ++col) {
+
+            const cv::Vec3b &p = ptr_src[col];
+            if (p[0] == 0 && p[1] == 0 && p[2] == 0)
                 continue;
-            } else {
-                cv::Vec3b intensity = sky_image.at<cv::Vec3b>(row, col);
-                sky_image_non_zero.at<uchar>(row_index, 0) = intensity[0];
-                sky_image_non_zero.at<uchar>(row_index, 1) = intensity[1];
-                sky_image_non_zero.at<uchar>(row_index, 2) = intensity[2];
-                row_index++;
+
+            if (row <= border[col]) {
+                sky_pixels[sky_non_zeros_nums] = p;
+                ++sky_non_zeros_nums;
+            }
+            else {
+                ground_pixels[ground_non_zeros_nums] = p;
+                ++ground_non_zeros_nums;
             }
         }
     }
 
-    cv::Mat ground_covar;
-    cv::Mat ground_mean;
-    cv::Mat ground_eig_vec;
-    cv::Mat ground_eig_val;
+    if (ground_non_zeros_nums == 0 || sky_non_zeros_nums == 0) {
+        return std::numeric_limits<double>::min();
+    }
+
+    static cv::Mat sky_image_non_zero, ground_image_non_zero;
+    sky_image_non_zero.create(sky_non_zeros_nums, 3, CV_8UC1);
+    ground_image_non_zero.create(ground_non_zeros_nums, 3, CV_8UC1);
+
+    #pragma omp parallel for
+    for (int i=0; i<sky_non_zeros_nums; ++i)
+    {
+        const cv::Vec3b &p = sky_pixels[i];
+        uchar *ptr_src = sky_image_non_zero.ptr<uchar>(i);
+        ptr_src[0] = p[0];
+        ptr_src[1] = p[1];
+        ptr_src[2] = p[2];
+    }
+
+    #pragma omp parallel for
+    for (int i=0; i<ground_non_zeros_nums; ++i)
+    {
+        const cv::Vec3b &p = ground_pixels[i];
+        uchar *ptr_src = ground_image_non_zero.ptr<uchar>(i);
+        ptr_src[0] = p[0];
+        ptr_src[1] = p[1];
+        ptr_src[2] = p[2];
+    }
+
+    static cv::Mat ground_covar;
+    static cv::Mat ground_mean;
+    static cv::Mat ground_eig_vec;
+    static cv::Mat ground_eig_val;
+
     cv::calcCovarMatrix(ground_image_non_zero, ground_covar,
                         ground_mean, CV_COVAR_ROWS | CV_COVAR_NORMAL | CV_COVAR_SCALE);
     cv::eigen(ground_covar, ground_eig_val, ground_eig_vec);
 
-    cv::Mat sky_covar;
-    cv::Mat sky_mean;
-    cv::Mat sky_eig_vec;
-    cv::Mat sky_eig_val;
+    static cv::Mat sky_covar;
+    static cv::Mat sky_mean;
+    static cv::Mat sky_eig_vec;
+    static cv::Mat sky_eig_val;
+
     cv::calcCovarMatrix(sky_image_non_zero, sky_covar,
                         sky_mean, CV_COVAR_ROWS | CV_COVAR_SCALE | CV_COVAR_NORMAL);
     cv::eigen(sky_covar, sky_eig_val, sky_eig_vec);
@@ -586,6 +658,7 @@ double SkyAreaDetector::calculate_sky_energy(const std::vector<int> &border,
  * @return
  */
 bool SkyAreaDetector::has_sky_region(const std::vector<int> &border,
+                                     std::vector<int> &border_diff,
                                      double thresh_1, double thresh_2,
                                      double thresh_3) {
     double border_mean = 0.0;
@@ -599,10 +672,11 @@ bool SkyAreaDetector::has_sky_region(const std::vector<int> &border,
         return false;
     }
 
-    std::vector<int> border_diff(static_cast<int>(border.size() - 1), 0);
-    for (auto i = static_cast<int>(border.size() - 1); i >= 0; i--) {
+    assert (border.size() - 1 == border_diff.size());
+    for (auto i = static_cast<int>(border.size() - 1); i >= 0; --i) {
         border_diff[i] = std::abs(border[i + 1] - border[i]);
     }
+
     double border_diff_mean = 0.0;
     for (auto &diff_val : border_diff) {
         border_diff_mean += diff_val;
@@ -619,11 +693,9 @@ bool SkyAreaDetector::has_sky_region(const std::vector<int> &border,
  * @return
  */
 bool SkyAreaDetector::has_partial_sky_region(const std::vector<int> &border,
-        double thresh_1) {
-    std::vector<int> border_diff(static_cast<int>(border.size() - 1), 0);
-    for (int i = static_cast<int>(border.size() - 1); i >= 0; i--) {
-        border_diff[i] = std::abs(border[i + 1] - border[i]);
-    }
+                                             const std::vector<int> &border_diff,
+                                             double thresh_1) {
+    assert (border.size() - 1 == border_diff.size());
 
     for (size_t i = 0; i < border_diff.size(); ++i) {
         if (border_diff[i] > thresh_1) {
@@ -671,18 +743,20 @@ cv::Mat SkyAreaDetector::make_sky_mask(const cv::Mat &src_image,
     cv::Mat mask = cv::Mat::zeros(image_height, image_width, CV_8UC1);
 
     if (type == 1) {
-        for (int col = 0; col < image_width; ++col) {
-            for (int row = 0; row < image_height; ++row) {
+        for (int row = 0; row < image_height; ++row) {
+            uchar *p = mask.ptr<uchar>(row);
+            for (int col = 0; col < image_width; ++col) {
                 if (row <= border[col]) {
-                    mask.at<uchar>(row, col) = 255;
+                    p[col] = 255;
                 }
             }
         }
     } else if (type == 0) {
-        for (int col = 0; col < image_width; ++col) {
-            for (int row = 0; row < image_height; ++row) {
+        for (int row = 0; row < image_height; ++row) {
+            uchar *p = mask.ptr<uchar>(row);
+            for (int col = 0; col < image_width; ++col) {
                 if (row > border[col]) {
-                    mask.at<uchar>(row, col) = 255;
+                    p[col] = 255;
                 }
             }
         }

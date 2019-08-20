@@ -20,3 +20,6 @@ HEADERS += \
     file_processor/file_system_processor.h \
     sky_detector/imageSkyDetector.h
 
+DISTFILES += \
+    CMakeLists.txt
+

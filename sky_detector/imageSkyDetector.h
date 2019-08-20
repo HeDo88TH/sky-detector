@@ -48,16 +48,16 @@ private:
     // 利用能量函数优化计算计算天空边界线
     std::vector<int> extract_border_optimal(const cv::Mat &src_image);
     // 计算天空边界线
-    std::vector<int> extract_border(const cv::Mat &gradient_info_map, double thresh);
+    void extract_border(std::vector<int> &border, const cv::Mat &gradient_info_map, double thresh);
     // 改善天空边界线
     std::vector<int> refine_border(const std::vector<int> &border,  const cv::Mat &src_image);
     // 计算天空图像能量函数
     double calculate_sky_energy(const std::vector<int> &border, const cv::Mat &src_image);
     // 判断图像是否存在天空区域
-    bool has_sky_region(const std::vector<int> &border, double thresh_1,
+    bool has_sky_region(const std::vector<int> &border, std::vector<int> &border_diff, double thresh_1,
                         double thresh_2, double thresh_3);
     // 判断是否部分是天空区域
-    bool has_partial_sky_region(const std::vector<int> &border, double thresh_1);
+    bool has_partial_sky_region(const std::vector<int> &border, const std::vector<int> &border_diff, double thresh_1);
     // 显示天空区域(用于debug)
     void display_sky_region(const cv::Mat &src_image, const std::vector<int> &border,
                             cv::Mat &sky_image);
