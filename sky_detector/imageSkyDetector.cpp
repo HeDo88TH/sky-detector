@@ -51,6 +51,13 @@ bool SkyAreaDetector::load_image(const std::string &image_file_path) {
 
     _src_img = cv::imread(image_file_path, CV_LOAD_IMAGE_UNCHANGED);
 
+    if (_src_img.channels() == 1)
+        cv::cvtColor(_src_img, _src_img, CV_GRAY2BGR);
+
+//    cv::imwrite("/home/hunterlew/tmp.png", _src_img);
+
+    assert (_src_img.channels() == 3);
+
 //    cv::resize(_src_img, _src_img, cv::Size(_src_img.size[1] * 4, _src_img.size[0] * 4));
 
     if (_src_img.empty() || !_src_img.data) {
@@ -77,7 +84,7 @@ bool SkyAreaDetector::extract_sky(const cv::Mat &src_image, cv::Mat &sky_mask) {
 
     std::vector<int> border_diff(static_cast<int>(sky_border_optimal.size() - 1), 0);
 
-    if (!has_sky_region(sky_border_optimal, border_diff, image_height / 30, image_height / 4, 2)) {
+    if (!has_sky_region(sky_border_optimal, border_diff, image_height / 30, image_height / 10, 5)) {
 #ifdef DEBUG
         LOG(INFO) << "没有提取到天空区域" << std::endl;
 #endif
@@ -145,7 +152,7 @@ void SkyAreaDetector::batch_detect(const std::string &image_dir, const std::stri
     std::vector<std::string> image_file_list;
     file_processor::FileSystemProcessor::get_directory_files(image_dir,
             image_file_list,
-            ".jpg",
+            ".png",
             file_processor::FileSystemProcessor::
             SEARCH_OPTION_T::ALLDIRECTORIES);
 
@@ -189,7 +196,7 @@ void SkyAreaDetector::batch_detect(const std::string &image_dir, const std::stri
             cv::imwrite(output_path, _src_img);
 
             LOG(INFO) << "---- " << image_file_name << " ---- "
-                      << "Null s" << std::endl;
+                      << "no sky" << std::endl;
         }
     }
 
@@ -232,6 +239,9 @@ std::vector<int> SkyAreaDetector::extract_border_optimal(const cv::Mat &src_imag
     cv::Mat gradient_info_map;
     extract_image_gradient(src_image, gradient_info_map);
 
+    cv::imwrite("/home/hunterlew/grad.png", gradient_info_map);
+//    std::cout << gradient_info_map << std::endl;
+
     int n = static_cast<int>(std::floor((f_thres_sky_max - f_thres_sky_min)
                                         / f_thres_sky_search_step)) + 1;
 
@@ -250,6 +260,9 @@ std::vector<int> SkyAreaDetector::extract_border_optimal(const cv::Mat &src_imag
 
         extract_border(b_tmp, gradient_info_map, t);
         double jn = calculate_sky_energy(b_tmp, src_image);
+
+        printf("%d: %.20lf\n", k, jn);
+
         if (std::isinf(jn)) {
             LOG(INFO) << "Jn is -inf" << std::endl;
         }
@@ -291,6 +304,10 @@ void SkyAreaDetector::extract_border(std::vector<int> &border,
             border[col] = image_height - 1;
         }
     }
+
+//    for (int h : border)
+//        std::cout << h << ", ";
+//    std::cout << std::endl;
 }
 
 /***
@@ -640,10 +657,12 @@ double SkyAreaDetector::calculate_sky_energy(const std::vector<int> &border,
     cv::eigen(sky_covar, sky_eig_val, sky_eig_vec);
 
     int para = 2; // 论文原始参数
-    double ground_det = cv::determinant(ground_covar);
-    double sky_det = cv::determinant(sky_covar);
-    double ground_eig_det = cv::determinant(ground_eig_vec);
-    double sky_eig_det = cv::determinant(sky_eig_vec);
+    double ground_det = fabs(cv::determinant(ground_covar));
+    double sky_det = fabs(cv::determinant(sky_covar));
+    double ground_eig_det = fabs(ground_eig_val.at<double>(0,0));
+    double sky_eig_det = fabs(sky_eig_val.at<double>(0.0));
+
+    printf("%lf, %lf, %lf, %lf\n", ground_det, sky_det, ground_eig_det, sky_eig_det);
 
     return 1 / ((para * sky_det + ground_det) + (para * sky_eig_det + ground_eig_det));
 
@@ -669,6 +688,7 @@ bool SkyAreaDetector::has_sky_region(const std::vector<int> &border,
 
     // 如果平均天际线太小认为没有天空区域
     if (border_mean < thresh_1) {
+        printf("border mean too height\n");
         return false;
     }
 
@@ -682,6 +702,8 @@ bool SkyAreaDetector::has_sky_region(const std::vector<int> &border,
         border_diff_mean += diff_val;
     }
     border_diff_mean /= border_diff.size();
+
+    printf("%lf, %lf; thresh1 %lf, thresh2 %lf, thresh3 %lf\n", border_mean, border_diff_mean, thresh_1, thresh_2, thresh_3);
 
     return !(border_mean < thresh_1 || (border_diff_mean > thresh_3 && border_mean < thresh_2));
 }
