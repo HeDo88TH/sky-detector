@@ -49,16 +49,18 @@ bool SkyAreaDetector::load_image(const std::string &image_file_path) {
         return false;
     }
 
-    _src_img = cv::imread(image_file_path, CV_LOAD_IMAGE_UNCHANGED);
+    _src_img = cv::imread(image_file_path/*, CV_LOAD_IMAGE_UNCHANGED*/);
 
     if (_src_img.channels() == 1)
         cv::cvtColor(_src_img, _src_img, CV_GRAY2BGR);
 
 //    cv::imwrite("/home/hunterlew/tmp.png", _src_img);
 
-    assert (_src_img.channels() == 3);
+    std::cout << "loading " << image_file_path << std::endl;
+    std::cout << "image size: " << _src_img.size << std::endl;
+    cv::resize(_src_img, _src_img, cv::Size(1240, 360));
 
-//    cv::resize(_src_img, _src_img, cv::Size(_src_img.size[1] * 4, _src_img.size[0] * 4));
+    assert (_src_img.channels() == 3);
 
     if (_src_img.empty() || !_src_img.data) {
         LOG(ERROR) << "图像文件: " << image_file_path << "读取失败" << std::endl;
@@ -82,14 +84,15 @@ bool SkyAreaDetector::extract_sky(const cv::Mat &src_image, cv::Mat &sky_mask) {
 
     std::vector<int> sky_border_optimal = extract_border_optimal(src_image);
 
-    std::vector<int> border_diff(static_cast<int>(sky_border_optimal.size() - 1), 0);
+//    std::vector<int> border_diff(static_cast<int>(sky_border_optimal.size() - 1), 0);
 
-    if (!has_sky_region(sky_border_optimal, border_diff, image_height / 30, image_height / 10, 5)) {
-#ifdef DEBUG
-        LOG(INFO) << "没有提取到天空区域" << std::endl;
-#endif
-        return false;
-    }
+//    if (!has_sky_region(sky_border_optimal, border_diff, image_height / 30, image_height / 10, 5)) {
+//#ifdef DEBUG
+//        LOG(INFO) << "没有提取到天空区域" << std::endl;
+//#endif
+//        LOG(INFO) << "find no sky" << std::endl;
+//        return false;
+//    }
 
 #ifdef DEBUG
     cv::Mat sky_image;
@@ -99,20 +102,101 @@ bool SkyAreaDetector::extract_sky(const cv::Mat &src_image, cv::Mat &sky_mask) {
     cv::waitKey();
 #endif
 
-    if (has_partial_sky_region(sky_border_optimal, border_diff, image_width / 3)) {
-        std::vector<int> border_new = refine_border(sky_border_optimal, src_image);
-        sky_mask = make_sky_mask(src_image, border_new);
-#ifdef DEBUG
-        display_sky_region(src_image, optimized_border, sky_image);
-        cv::imshow("sky image with refine", sky_image);
-        cv::waitKey();
-#endif
-        return true;
-    }
+//    // hard to find threshold, so always refine the sky border
+//    /*if (has_partial_sky_region(sky_border_optimal, border_diff, image_width / 3)) */{
+//        LOG(INFO) << "find partial sky and refine it" << std::endl;
+//        std::vector<int> border_new = refine_border(sky_border_optimal, src_image);
+//        sky_mask = make_sky_mask(src_image, border_new);
+//#ifdef DEBUG
+//        display_sky_region(src_image, optimized_border, sky_image);
+//        cv::imshow("sky image with refine", sky_image);
+//        cv::waitKey();
+//#endif
+//        return true;
+//    }
+
+    check_sky_border_by_gray_value(src_image, sky_border_optimal);
 
     sky_mask = make_sky_mask(src_image, sky_border_optimal);
 
     return true;
+}
+
+void SkyAreaDetector::check_sky_border_by_gray_value(const cv::Mat &src_image,
+                                                     std::vector<int> &sky_border_optimal) {
+    int image_height = src_image.size[0];
+    int image_width = src_image.size[1];
+
+    assert (image_width == sky_border_optimal.size());
+
+    cv::Mat gray_image;
+    if (_src_img.channels() != 1)
+        cv::cvtColor(_src_img, gray_image, CV_BGR2GRAY);
+
+    for (int i=0; i<image_width; ++i)
+    {
+        int border = sky_border_optimal[i];
+
+        for (int j=0; j<border; ++j)
+        {
+            uchar val = gray_image.at<uchar>(j, i);
+            if (val < 128)
+            {
+                sky_border_optimal[i] = -1;
+                break;
+            }
+        }
+
+        if (border != -1
+            && (i>1 && sky_border_optimal[i-1] == -1)
+            && (i<image_width-1 && sky_border_optimal[i+1] == -1))
+        {
+            sky_border_optimal[i] = -1;
+        }
+    }
+
+    // remove those with short width
+    int p = -1;
+    int q = -1;
+    for (int i=0; i<image_width; ++i)
+    {
+        int border = sky_border_optimal[i];
+
+        if (border != -1)  // find left valid border [
+        {
+            p = i;
+
+            if (i == image_width - 1)
+                q = image_width;
+
+            for (int j=i+1; j<image_width; ++j)
+            {
+                int border_tmp = sky_border_optimal[j];
+
+                if (border_tmp == -1 || j == image_width - 1)  // find right valid border )
+                {
+                    q = j;
+                    if (j == image_width - 1)
+                        q = image_width;
+
+                    break;
+                }
+            }
+
+            assert (q > p);
+
+            if (q > p)
+                printf("find valid len: %d\n", q-p);
+
+            if (q > p && q - p < f_thres_sky_width)
+            {
+                for (int j=p; j<q; ++j)
+                    sky_border_optimal[j] = -1;
+            }
+
+            i = q;
+        }
+    }
 }
 
 /***
@@ -129,21 +213,28 @@ void SkyAreaDetector::detect(const std::string &image_file_path, const std::stri
 
     // 提取图像天空区域
     cv::Mat sky_mask;
-    extract_sky(_src_img, sky_mask);
 
-    // 制作掩码输出
-    cv::Mat sky_image;
+    auto start_t = std::chrono::high_resolution_clock::now();
 
-    int image_height = _src_img.size[0];
-    int image_width = _src_img.size[1];
+    if (extract_sky(_src_img, sky_mask)) {
 
-    cv::Mat sky_image_full = cv::Mat::zeros(image_height, image_width, CV_8UC3);
-    sky_image_full.setTo(cv::Scalar(0, 0, 255), sky_mask);
-    cv::addWeighted(_src_img, 1, sky_image_full, 1, 0, sky_image);
+        // 制作掩码输出
+        _src_img.setTo(cv::Scalar(0, 0, 255), sky_mask);
 
-    cv::imwrite(output_path, sky_image);
+        cv::imwrite(output_path, _src_img);
 
-    LOG(INFO) << "图像: " << image_file_path << "检测完毕";
+        auto end_t = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> cost_time = end_t - start_t;
+
+        LOG(INFO) << "---- " << image_file_path << " ---- "
+                  << cost_time.count() << "s" << std::endl;
+    } else {
+
+        cv::imwrite(output_path, _src_img);
+
+        LOG(INFO) << "---- " << image_file_path << " ---- "
+                  << "Null s" << std::endl;
+    }
 }
 
 void SkyAreaDetector::batch_detect(const std::string &image_dir, const std::string &output_dir) {
@@ -175,14 +266,7 @@ void SkyAreaDetector::batch_detect(const std::string &image_dir, const std::stri
         if (extract_sky(_src_img, sky_mask)) {
 
             // 制作掩码输出
-            cv::Mat sky_image;
-
-            int image_height = _src_img.size[0];
-            int image_width = _src_img.size[1];
-
-            cv::Mat sky_image_full = cv::Mat::zeros(image_height, image_width, CV_8UC3);
             _src_img.setTo(cv::Scalar(0, 0, 255), sky_mask);
-//                cv::addWeighted(_src_img, 1, sky_image_full, 1, 0, sky_image);
 
             cv::imwrite(output_path, _src_img);
 
@@ -196,7 +280,7 @@ void SkyAreaDetector::batch_detect(const std::string &image_dir, const std::stri
             cv::imwrite(output_path, _src_img);
 
             LOG(INFO) << "---- " << image_file_name << " ---- "
-                      << "no sky" << std::endl;
+                      << "Null s" << std::endl;
         }
     }
 
@@ -239,8 +323,7 @@ std::vector<int> SkyAreaDetector::extract_border_optimal(const cv::Mat &src_imag
     cv::Mat gradient_info_map;
     extract_image_gradient(src_image, gradient_info_map);
 
-    cv::imwrite("/home/hunterlew/grad.png", gradient_info_map);
-//    std::cout << gradient_info_map << std::endl;
+//    cv::imwrite("/home/hunterlew/grad.png", gradient_info_map);
 
     int n = static_cast<int>(std::floor((f_thres_sky_max - f_thres_sky_min)
                                         / f_thres_sky_search_step)) + 1;
@@ -258,10 +341,10 @@ std::vector<int> SkyAreaDetector::extract_border_optimal(const cv::Mat &src_imag
     for (int k = 1; k < n + 1; ++k) {
         double t = f_thres_sky_min + step * (k - 1);
 
-        extract_border(b_tmp, gradient_info_map, t);
+        extract_border(b_tmp, gradient_info_map, t, src_image);
         double jn = calculate_sky_energy(b_tmp, src_image);
 
-        printf("%d: %.20lf\n", k, jn);
+//        printf("%d: %.20lf\n", k, jn);
 
         if (std::isinf(jn)) {
             LOG(INFO) << "Jn is -inf" << std::endl;
@@ -283,8 +366,9 @@ std::vector<int> SkyAreaDetector::extract_border_optimal(const cv::Mat &src_imag
  * @return
  */
 void SkyAreaDetector::extract_border(std::vector<int> &border,
-        const cv::Mat &gradient_info_map,
-        double thresh) {
+                                     const cv::Mat &gradient_info_map,
+                                     double thresh,
+                                     const cv::Mat &src_image) {
     int image_height = gradient_info_map.size[0];
     int image_width = gradient_info_map.size[1];
 
@@ -292,16 +376,49 @@ void SkyAreaDetector::extract_border(std::vector<int> &border,
 
 #pragma omp parallel for
     for (int col = 0; col < image_width; ++col) {
-        int row_index = 0;
+        int row_index = -1;
         for (int row = 0; row < image_height; ++row) {
             row_index = row;
+
             if (gradient_info_map.at<double>(row, col) > thresh) {
-                border[col] = row;
+
+                // for gray image
+                if (src_image.at<cv::Vec3b>(row, col)[0] == src_image.at<cv::Vec3b>(row, col)[1]
+                    && src_image.at<cv::Vec3b>(row, col)[0] == src_image.at<cv::Vec3b>(row, col)[2]) {
+
+                    double grad_y = (2*src_image.at<cv::Vec3b>(row+1, col)[0]
+                            + src_image.at<cv::Vec3b>(row+1, col+1)[0]
+                            + src_image.at<cv::Vec3b>(row+1, col-1)[0])
+                            - (2*src_image.at<cv::Vec3b>(row-1, col)[0]
+                            + src_image.at<cv::Vec3b>(row-1, col+1)[0]
+                            + src_image.at<cv::Vec3b>(row-1, col-1)[0]);
+
+                    if (grad_y > 0)  // down white, up black
+                        border[col] = -1;
+                    else
+                        border[col] = row;
+
+                    break;
+                }
+                else
+                {
+                    border[col] = row;
+                    break;
+                }
+            }
+
+            if (row_index >= image_height / 2)
+            {
+                border[col] = -1;
                 break;
             }
         }
-        if (row_index == 0) {
-            border[col] = image_height - 1;
+
+        if (row_index >= image_height / 2)
+            border[col] = -1;
+
+        if (row_index <= 5) {
+            border[col] = -1;
         }
     }
 
@@ -599,7 +716,7 @@ double SkyAreaDetector::calculate_sky_energy(const std::vector<int> &border,
             if (p[0] == 0 && p[1] == 0 && p[2] == 0)
                 continue;
 
-            if (row <= border[col]) {
+            if (row < border[col]) {
                 sky_pixels[sky_non_zeros_nums] = p;
                 ++sky_non_zeros_nums;
             }
@@ -662,7 +779,7 @@ double SkyAreaDetector::calculate_sky_energy(const std::vector<int> &border,
     double ground_eig_det = fabs(ground_eig_val.at<double>(0,0));
     double sky_eig_det = fabs(sky_eig_val.at<double>(0.0));
 
-    printf("%lf, %lf, %lf, %lf\n", ground_det, sky_det, ground_eig_det, sky_eig_det);
+//    printf("%lf, %lf, %lf, %lf\n", ground_det, sky_det, ground_eig_det, sky_eig_det);
 
     return 1 / ((para * sky_det + ground_det) + (para * sky_eig_det + ground_eig_det));
 
@@ -703,7 +820,7 @@ bool SkyAreaDetector::has_sky_region(const std::vector<int> &border,
     }
     border_diff_mean /= border_diff.size();
 
-    printf("%lf, %lf; thresh1 %lf, thresh2 %lf, thresh3 %lf\n", border_mean, border_diff_mean, thresh_1, thresh_2, thresh_3);
+//    printf("%lf, %lf; thresh1 %lf, thresh2 %lf, thresh3 %lf\n", border_mean, border_diff_mean, thresh_1, thresh_2, thresh_3);
 
     return !(border_mean < thresh_1 || (border_diff_mean > thresh_3 && border_mean < thresh_2));
 }
@@ -716,11 +833,11 @@ bool SkyAreaDetector::has_sky_region(const std::vector<int> &border,
  */
 bool SkyAreaDetector::has_partial_sky_region(const std::vector<int> &border,
                                              const std::vector<int> &border_diff,
-                                             double thresh_1) {
+                                             double thresh_4) {
     assert (border.size() - 1 == border_diff.size());
 
     for (size_t i = 0; i < border_diff.size(); ++i) {
-        if (border_diff[i] > thresh_1) {
+        if (border_diff[i] > thresh_4) {
             return true;
         }
     }
