@@ -1,4 +1,4 @@
-# My own modification in this branch
+# Modification in this branch
 1. support gray image sky detection
 2. fix bugs in computing energy function
 3. speed up computing procedure by half
