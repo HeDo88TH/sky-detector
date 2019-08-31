@@ -1,3 +1,9 @@
+# My own modification in this branch
+1. support gray image sky detection
+2. fix bugs in computing energy function
+3. speed up computing procedure by half
+4. special process or param setting for kitti dataset
+
 # Sky-Area-Detector
 sky area detection without deep neural networks.
 A c++ implemention of the algorithm mentioned in paper 
