@@ -21,5 +21,6 @@ HEADERS += \
     sky_detector/imageSkyDetector.h
 
 DISTFILES += \
-    CMakeLists.txt
+    CMakeLists.txt \
+    README.md
 

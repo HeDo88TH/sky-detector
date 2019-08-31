@@ -4,6 +4,8 @@
 3. speed up computing procedure by half
 4. special process or param setting for kitti dataset
 
+![kitti_example.png](https://github.com/hunterlew/sky-detector/blob/master/kitti_example.png)
+
 # Sky-Area-Detector
 sky area detection without deep neural networks.
 A c++ implemention of the algorithm mentioned in paper 
