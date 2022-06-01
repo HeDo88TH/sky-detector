@@ -43,8 +43,8 @@ add_executable(detector ${MAIN_SOURCE_FILE} ${DIR_SRCS})
 
 target_link_libraries(detector
         ${OpenCV_LIBS}
-        /usr/local/lib/libboost_filesystem.so
-        /usr/local/lib/libboost_system.so
-        /usr/local/lib/libglog.so
+        /usr/lib/x86_64-linux-gnu/libboost_filesystem.so
+        /usr/lib/x86_64-linux-gnu/libboost_system.so
+        /usr/lib/x86_64-linux-gnu/libglog.so
         )
 LINK_DIRECTORIES(/usr/local/lib /usr/lib/x86_64-linux-gnu)
