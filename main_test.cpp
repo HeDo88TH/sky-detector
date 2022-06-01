@@ -28,7 +28,7 @@ int main(int argc, char **argv) {
 
     if (argc != 3) {
         LOG(INFO) << "Usage:";
-        LOG(INFO) << "./detector 图像输入路径 图像输出路径";
+        LOG(INFO) << "./detector input output";
         return -1;
     } else {
 

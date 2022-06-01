@@ -16,7 +16,7 @@
 namespace sky_detector {
 
 /***
- * 类复制构造函数
+ * Copy class constructor
  * @param _SkyAreaDetector
  */
 SkyAreaDetector::SkyAreaDetector(const SkyAreaDetector &_SkyAreaDetector) {
@@ -25,7 +25,7 @@ SkyAreaDetector::SkyAreaDetector(const SkyAreaDetector &_SkyAreaDetector) {
     this->f_thres_sky_search_step = _SkyAreaDetector.f_thres_sky_search_step;
 }
 /***
- * 类复制构造函数
+ * Copy class constructor
  * @param _SkyAreaDetector
  * @return
  */
@@ -38,22 +38,22 @@ SkyAreaDetector& SkyAreaDetector::operator=(const SkyAreaDetector &_SkyAreaDetec
 }
 
 /***
- * 读取图像文件
+ * Read image file
  * @param image_file_path
  * @return
  */
 bool SkyAreaDetector::load_image(const std::string &image_file_path) {
     if (!file_processor::FileSystemProcessor::is_file_exist(image_file_path)) {
-        LOG(ERROR) << "图像文件: " << image_file_path << "不存在" << std::endl;
+        LOG(ERROR) << "Image file: " << image_file_path << "does not exist" << std::endl;
         return false;
     }
 
-    _src_img = cv::imread(image_file_path, CV_LOAD_IMAGE_UNCHANGED);
+    _src_img = cv::imread(image_file_path, cv::IMREAD_UNCHANGED);
 
 //    cv::resize(_src_img, _src_img, cv::Size(_src_img.size[1] * 4, _src_img.size[0] * 4));
 
     if (_src_img.empty() || !_src_img.data) {
-        LOG(ERROR) << "图像文件: " << image_file_path << "读取失败" << std::endl;
+        LOG(ERROR) << "Image file: " << image_file_path << "read failed" << std::endl;
         return false;
     }
 
@@ -61,7 +61,7 @@ bool SkyAreaDetector::load_image(const std::string &image_file_path) {
 }
 
 /***
- * 提取图像天空区域
+ * Extract image sky area
  * @param bgrimg
  * @param skybinaryimg
  * @param horizonline
@@ -76,7 +76,7 @@ bool SkyAreaDetector::extract_sky(const cv::Mat &src_image, cv::Mat &sky_mask) {
 
     if (!has_sky_region(sky_border_optimal, image_height / 30, image_height / 4, 2)) {
 #ifdef DEBUG
-        LOG(INFO) << "没有提取到天空区域" << std::endl;
+        LOG(INFO) << "Sky area not extracted" << std::endl;
 #endif
         return false;
     }
@@ -106,22 +106,22 @@ bool SkyAreaDetector::extract_sky(const cv::Mat &src_image, cv::Mat &sky_mask) {
 }
 
 /***
- * 检测图像天空区域接口
+ * Detect Image Sky Area Interface
  * @param image_file_dir
  * @param check_output_dir
  */
 void SkyAreaDetector::detect(const std::string &image_file_path, const std::string &output_path) {
 
-    LOG(INFO) << "开始检测图像: " << image_file_path;
+    LOG(INFO) << "Start detecting images: " << image_file_path;
 
-    // 加载图像
+    // Load image
     load_image(image_file_path);
 
-    // 提取图像天空区域
+    // Extract image sky area
     cv::Mat sky_mask;
     extract_sky(_src_img, sky_mask);
 
-    // 制作掩码输出
+    // Make mask output
     cv::Mat sky_image;
 
     int image_height = _src_img.size[0];
@@ -133,12 +133,12 @@ void SkyAreaDetector::detect(const std::string &image_file_path, const std::stri
 
     cv::imwrite(output_path, sky_image);
 
-    LOG(INFO) << "图像: " << image_file_path << "检测完毕";
+    LOG(INFO) << "Image: " << image_file_path << " detection is complete";
 }
 
 void SkyAreaDetector::batch_detect(const std::string &image_dir, const std::string &output_dir) {
 
-    // 获取图像信息
+    // Get image information
     std::vector<std::string> image_file_list;
     file_processor::FileSystemProcessor::get_directory_files(image_dir,
             image_file_list,
@@ -146,8 +146,8 @@ void SkyAreaDetector::batch_detect(const std::string &image_dir, const std::stri
             file_processor::FileSystemProcessor::
             SEARCH_OPTION_T::ALLDIRECTORIES);
 
-    LOG(INFO) << "开始批量提取天空区域";
-    LOG(INFO) << "--- 图像: --- 耗时(s): ---";
+    LOG(INFO) << "Start batch extraction of sky regions";
+    LOG(INFO) << "--- Image: --- Time(s): ---";
 
     for (auto &image_file : image_file_list) {
 
@@ -156,15 +156,15 @@ void SkyAreaDetector::batch_detect(const std::string &image_dir, const std::stri
         auto image_file_name = file_processor::FileSystemProcessor::get_file_name(image_file);
         auto output_path = file_processor::FileSystemProcessor::combine_path(output_dir, image_file_name);
 
-        // 加载图像
+        // Load image
         load_image(image_file);
 
-        // 提取天空区域
+        // Extract sky area
         cv::Mat sky_mask;
 
         if (extract_sky(_src_img, sky_mask)) {
 
-            // 制作掩码输出
+            // Make mask output
             cv::Mat sky_image;
 
             int image_height = _src_img.size[0];
@@ -190,24 +190,24 @@ void SkyAreaDetector::batch_detect(const std::string &image_dir, const std::stri
         }
     }
 
-    LOG(INFO) << "批量提取完毕";
+    LOG(INFO) << "Batch extraction completed";
 }
 
 /***
- * 提取图像梯度信息
+ * Extract image gradient information
  * @param src_image
  * @param gradient_image
  */
 void SkyAreaDetector::extract_image_gradient(const cv::Mat &src_image, cv::Mat &gradient_image) {
-    // 转灰度图像
+    // Convert grayscale image
     cv::Mat gray_image;
     cv::cvtColor(src_image, gray_image, cv::COLOR_BGR2GRAY);
-    // Sobel算子提取图像梯度信息
+    // Sobel operator to extract image gradient information
     cv::Mat x_gradient;
     cv::Sobel(gray_image, x_gradient, CV_64F, 1, 0);
     cv::Mat y_gradient;
     cv::Sobel(gray_image, y_gradient, CV_64F, 0, 1);
-    // 计算梯度信息图
+    // Computational gradient infographic
     cv::Mat gradient;
     cv::pow(x_gradient, 2, x_gradient);
     cv::pow(y_gradient, 2, y_gradient);
@@ -219,12 +219,12 @@ void SkyAreaDetector::extract_image_gradient(const cv::Mat &src_image, cv::Mat &
 }
 
 /***
- * 计算天空边界线
+ * Calculate the sky boundary
  * @param src_image
  * @return
  */
 std::vector<int> SkyAreaDetector::extract_border_optimal(const cv::Mat &src_image) {
-    // 提取梯度信息图
+    // Extract gradient infographics
     cv::Mat gradient_info_map;
     extract_image_gradient(src_image, gradient_info_map);
 
@@ -253,7 +253,7 @@ std::vector<int> SkyAreaDetector::extract_border_optimal(const cv::Mat &src_imag
 }
 
 /***
- * 计算天空边界线
+ * Calculate the sky boundary
  * @param gradient_info_map
  * @param thresh
  * @return
@@ -282,7 +282,7 @@ std::vector<int> SkyAreaDetector::extract_border(const cv::Mat &gradient_info_ma
 }
 
 /***
- * 改善天空边界线
+ * Improve sky boundaries
  * @param border
  * @param src_image
  * @return
@@ -293,17 +293,17 @@ std::vector<int> SkyAreaDetector::refine_border(const std::vector<int> &border,
     int image_height = src_image.size[0];
     int image_width = src_image.size[1];
 
-    // 制作天空图像掩码和地面图像掩码
+    // Make a sky image mask and a ground image mask
     cv::Mat sky_mask = make_sky_mask(src_image, border, 1);
     cv::Mat ground_mask = make_sky_mask(src_image, border, 0);
 
-    // 扣取天空图像和地面图像
+    // Deduction of sky images and ground images
     cv::Mat sky_image = cv::Mat::zeros(image_height, image_width, CV_8UC3);
     cv::Mat ground_image = cv::Mat::zeros(image_height, image_width, CV_8UC3);
     src_image.copyTo(sky_image, sky_mask);
     src_image.copyTo(ground_image, ground_mask);
 
-    // 计算天空和地面图像协方差矩阵
+    // Compute sky and ground image covariance matrices
     int ground_non_zeros_nums = cv::countNonZero(ground_mask);
     int sky_non_zeros_nums = cv::countNonZero(sky_mask);
 
@@ -344,13 +344,19 @@ std::vector<int> SkyAreaDetector::refine_border(const std::vector<int> &border,
         }
     }
 
-    // k均值聚类调整天空区域边界
+    // k-means clustering adjusts sky region boundaries
     cv::Mat sky_image_float;
     sky_image_non_zero.convertTo(sky_image_float, CV_32FC1);
     cv::Mat labels;
-    cv::kmeans(sky_image_float, 2, labels,
+
+    /*cv::kmeans(sky_image_float, 2, labels,
                cv::TermCriteria(CV_TERMCRIT_EPS + CV_TERMCRIT_ITER, 10, 1.0),
-               10, cv::KMEANS_RANDOM_CENTERS);
+               10, cv::KMEANS_RANDOM_CENTERS);*/
+
+    cv::kmeans(sky_image_float, 2, labels,
+                cv::TermCriteria(cv::TermCriteria::MAX_ITER | cv::TermCriteria::EPS, 10, 1.0),
+                10, cv::KMEANS_RANDOM_CENTERS);
+
     int label_1_nums = cv::countNonZero(labels);
     int label_0_nums = labels.rows - label_1_nums;
 
@@ -379,21 +385,21 @@ std::vector<int> SkyAreaDetector::refine_border(const std::vector<int> &border,
     cv::Mat sky_covar_1;
     cv::Mat sky_mean_1;
     cv::calcCovarMatrix(sky_label_1_image, sky_covar_1,
-                        sky_mean_1, CV_COVAR_ROWS | CV_COVAR_NORMAL | CV_COVAR_SCALE);
+                        sky_mean_1, cv::COVAR_ROWS | cv::COVAR_NORMAL | cv::COVAR_SCALE);
     cv::Mat ic_s1;
     cv::invert(sky_covar_1, ic_s1, cv::DECOMP_SVD);
 
     cv::Mat sky_covar_0;
     cv::Mat sky_mean_0;
     cv::calcCovarMatrix(sky_label_0_image, sky_covar_0,
-                        sky_mean_0, CV_COVAR_ROWS | CV_COVAR_NORMAL | CV_COVAR_SCALE);
+                        sky_mean_0, cv::COVAR_ROWS | cv::COVAR_NORMAL | cv::COVAR_SCALE);
     cv::Mat ic_s0;
     cv::invert(sky_covar_0, ic_s0, cv::DECOMP_SVD);
 
     cv::Mat ground_covar;
     cv::Mat ground_mean;
     cv::calcCovarMatrix(ground_image_non_zero, ground_covar,
-                        ground_mean, CV_COVAR_ROWS | CV_COVAR_NORMAL | CV_COVAR_SCALE);
+                        ground_mean, cv::COVAR_ROWS | cv::COVAR_NORMAL | cv::COVAR_SCALE);
     cv::Mat ic_g;
     cv::invert(ground_covar, ic_g, cv::DECOMP_SVD);
 
@@ -414,7 +420,7 @@ std::vector<int> SkyAreaDetector::refine_border(const std::vector<int> &border,
     for (size_t col = 0; col < border.size(); ++col) {
         double cnt = 0.0;
         for (int row = 0; row < border[col]; ++row) {
-            // 计算原始天空区域的区域每个像素点和修正过后的天空区域的每个点的Mahalanobis距离
+            // Calculate the Mahalanobis distance of each pixel in the original sky area and each point in the corrected sky area
             cv::Mat ori_pix;
             src_image.row(row).col(static_cast<int>(col)).convertTo(ori_pix, sky_mean.type());
             ori_pix = ori_pix.reshape(1, 1);
@@ -438,7 +444,7 @@ std::vector<int> SkyAreaDetector::refine_border(const std::vector<int> &border,
 }
 
 /***
- * 计算天空图像能量函数
+ * Calculate the sky image energy function
  * @param border
  * @param src_image
  * @return
@@ -449,17 +455,17 @@ double SkyAreaDetector::calculate_sky_energy(const std::vector<int> &border,
     int image_height = src_image.size[0];
     int image_width = src_image.size[1];
 
-    // 制作天空图像掩码和地面图像掩码
+    // Make a sky image mask and a ground image mask
     cv::Mat sky_mask = make_sky_mask(src_image, border, 1);
     cv::Mat ground_mask = make_sky_mask(src_image, border, 0);
 
-    // 扣取天空图像和地面图像
+    // Deduction of sky images and ground images
     cv::Mat sky_image = cv::Mat::zeros(image_height, image_width, CV_8UC3);
     cv::Mat ground_image = cv::Mat::zeros(image_height, image_width, CV_8UC3);
     src_image.copyTo(sky_image, sky_mask);
     src_image.copyTo(ground_image, ground_mask);
 
-    // 计算天空和地面图像协方差矩阵
+    // Compute sky and ground image covariance matrices
     int ground_non_zeros_nums = cv::countNonZero(ground_mask);
     int sky_non_zeros_nums = cv::countNonZero(sky_mask);
 
@@ -509,7 +515,7 @@ double SkyAreaDetector::calculate_sky_energy(const std::vector<int> &border,
     cv::Mat ground_eig_vec;
     cv::Mat ground_eig_val;
     cv::calcCovarMatrix(ground_image_non_zero, ground_covar,
-                        ground_mean, CV_COVAR_ROWS | CV_COVAR_NORMAL | CV_COVAR_SCALE);
+                        ground_mean, cv::COVAR_ROWS | cv::COVAR_NORMAL | cv::COVAR_SCALE);
     cv::eigen(ground_covar, ground_eig_val, ground_eig_vec);
 
     cv::Mat sky_covar;
@@ -517,10 +523,10 @@ double SkyAreaDetector::calculate_sky_energy(const std::vector<int> &border,
     cv::Mat sky_eig_vec;
     cv::Mat sky_eig_val;
     cv::calcCovarMatrix(sky_image_non_zero, sky_covar,
-                        sky_mean, CV_COVAR_ROWS | CV_COVAR_SCALE | CV_COVAR_NORMAL);
+                        sky_mean, cv::COVAR_ROWS | cv::COVAR_SCALE | cv::COVAR_NORMAL);
     cv::eigen(sky_covar, sky_eig_val, sky_eig_vec);
 
-    int para = 2; // 论文原始参数
+    int para = 2; // Original parameters of the paper
     double ground_det = cv::determinant(ground_covar);
     double sky_det = cv::determinant(sky_covar);
     double ground_eig_det = cv::determinant(ground_eig_vec);
@@ -531,7 +537,7 @@ double SkyAreaDetector::calculate_sky_energy(const std::vector<int> &border,
 }
 
 /***
- * 确定图像是否含有天空区域
+ * Determine if an image contains a sky area
  * @param border
  * @param thresh_1
  * @param thresh_2
@@ -547,7 +553,7 @@ bool SkyAreaDetector::has_sky_region(const std::vector<int> &border,
     }
     border_mean /= border.size();
 
-    // 如果平均天际线太小认为没有天空区域
+    // If the average skyline is too small to consider no sky area
     if (border_mean < thresh_1) {
         return false;
     }
@@ -566,7 +572,7 @@ bool SkyAreaDetector::has_sky_region(const std::vector<int> &border,
 }
 
 /***
- * 判断图像是否有部分区域为天空区域
+ * Determine whether there is a part of the image that is a sky area
  * @param border
  * @param thresh_1
  * @return
@@ -588,7 +594,7 @@ bool SkyAreaDetector::has_partial_sky_region(const std::vector<int> &border,
 }
 
 /***
- * 天空区域和原始图像融合图
+ * Fusion map of sky area and original image
  * @param src_image
  * @param border
  * @param sky_image
@@ -599,17 +605,17 @@ void SkyAreaDetector::display_sky_region(const cv::Mat &src_image,
 
     int image_height = src_image.size[0];
     int image_width = src_image.size[1];
-    // 制作天空图掩码
+    // Make a sky map mask
     cv::Mat sky_mask = make_sky_mask(src_image, border, 1);
 
-    // 天空和原始图像融合
+    // Blend of sky and original image
     cv::Mat sky_image_full = cv::Mat::zeros(image_height, image_width, CV_8UC3);
     sky_image_full.setTo(cv::Scalar(0, 0, 255), sky_mask);
     cv::addWeighted(src_image, 1, sky_image_full, 1, 0, sky_image);
 }
 
 /***
- * 制作天空掩码图像
+ * Make a sky mask image
  * @param src_image
  * @param border
  * @param type: 1: 天空 0: 地面
