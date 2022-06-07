@@ -8,7 +8,7 @@ aux_source_directory(sky_detector DIR_SRCS)
 aux_source_directory(file_processor DIR_SRCS)
 aux_source_directory(base DIR_SRCS)
 
-SET(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -g -Wall")
+SET(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -O3 -g -Wall")
 
 FIND_PACKAGE( OpenMP REQUIRED)
 if(OPENMP_FOUND)

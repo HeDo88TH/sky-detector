@@ -34,6 +34,7 @@ private:
     double f_thres_sky_max = 600;
     double f_thres_sky_min = 5;
     double f_thres_sky_search_step = 5;
+    double f_thres_sky_width = 30;
 
     /***加载原始图像***/
     // 加载原始图像
@@ -47,21 +48,24 @@ private:
     // 利用能量函数优化计算计算天空边界线
     std::vector<int> extract_border_optimal(const cv::Mat &src_image);
     // 计算天空边界线
-    std::vector<int> extract_border(const cv::Mat &gradient_info_map, double thresh);
+    void extract_border(std::vector<int> &border, const cv::Mat &gradient_info_map, double thresh, const cv::Mat &src_image);
     // 改善天空边界线
     std::vector<int> refine_border(const std::vector<int> &border,  const cv::Mat &src_image);
     // 计算天空图像能量函数
     double calculate_sky_energy(const std::vector<int> &border, const cv::Mat &src_image);
     // 判断图像是否存在天空区域
-    bool has_sky_region(const std::vector<int> &border, double thresh_1,
+    bool has_sky_region(const std::vector<int> &border, std::vector<int> &border_diff, double thresh_1,
                         double thresh_2, double thresh_3);
     // 判断是否部分是天空区域
-    bool has_partial_sky_region(const std::vector<int> &border, double thresh_1);
+    bool has_partial_sky_region(const std::vector<int> &border, const std::vector<int> &border_diff, double thresh_1);
     // 显示天空区域(用于debug)
     void display_sky_region(const cv::Mat &src_image, const std::vector<int> &border,
                             cv::Mat &sky_image);
     // 制作天空掩码图
     cv::Mat make_sky_mask(const cv::Mat &src_image, const std::vector<int> &border, int type=1);
+
+    void check_sky_border_by_gray_value(const cv::Mat &src_image,
+                                        std::vector<int> &sky_border_optimal);
 };
 }
 
